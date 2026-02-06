@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+    match /users/{userId} {
+      allow read, update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    match /users/{userId}/cart/{itemId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /books/{bookId} {
+      allow read: if resource.data.active == true || isAdmin();
+      allow create, update, delete: if isAdmin()
+        && !request.resource.data.keys().hasAny(["downloadUrl", "downloadLink", "driveUrl"]);
+    }
+
+    match /purchases/{purchaseId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && ((request.resource.data.userId == request.auth.uid
+          && !exists(/databases/$(database)/documents/purchases/$(request.auth.uid + "_" + request.resource.data.bookId)))
+          || isAdmin());
+      allow update, delete: if false;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && (request.resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+  }
+}
